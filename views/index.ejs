@@ -1,0 +1,544 @@
+
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Anton Yamkovoy: Software Engineering Demo</title>
+
+    <style>
+    .links line {
+      stroke: #999;
+      stroke-opacity: 0.6;
+    }
+    .nodes circle {
+      stroke: #fff;
+      stroke-width: 1.5px;
+    }
+
+    </style>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega@5.8.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@4.0.0-beta.12"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.1.0"></script>
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="/css/style.css">
+  </head>
+  <body>
+
+    <form action="/" method="post" name="form">
+    <div id="filters" class="form-style-5">
+    <h2>Github data analysis </h2>
+          <hidden name="lang_value" id="lang_value" value="All">
+          <hidden name="repo_value" id="repo_value" value="All">
+          <hidden name="user_value" id="user_value" value="All">
+    <fieldset>
+          <legend><span class="number">1</span>Language:</legend>
+           <select id="lang" name="lang" size="1" width="20" onchange="getLangSelection()">
+             <option value = "All" >All Languages </option>
+             <% langList.forEach((item) => { %>
+               <option value = "<%= item.lang %>"> <%= item.lang %></option>
+             <% }); %>
+           </select>
+          <legend><span class="number">2</span>Repository:</legend>
+           <select id="repo" name="repo" size="1" width="40" onchange="getRepoSelection()">
+            <option value = "All" >All repos </option>
+            <% reposList.forEach((item) => { %>
+          <option value = "<%= item.repo_name %>"> <%= item.repo_name %></option>
+        <% }); %>
+         </select>
+      <legend><span class="number">3</span>User:</legend>
+      <select id="user" name="user" size="1" width="40" onchange="getUserSelection()">
+        <option value = "All" >All users</option>
+          <% userList.forEach((item) => { %>
+          <option value = "<%= item.login %>"> <%= item.login %></option>
+        <% }); %>
+      </select>
+      <legend><span class="number">4</span>Select</legend>
+      <input type="submit" value="Apply">
+    </fieldset>
+      </form>
+
+    </div>
+    <div id="selected_values" class="form-style-5">
+      <fieldset>
+      <legend><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>Language:</legend><textarea name="selected_lang" readonly><%= selected_lang %></textarea>
+      <legend><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>Repository:</legend><textarea name="selected_repo" readonly><%= selected_repo %></textarea>
+      <legend><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>User:</legend><textarea name="selected_user" readonly><%= selected_user %></textarea>
+    </fieldset>
+    </div>
+    <!-- Tab links -->
+    <div class="tab">
+      <button class="tablinks active" onclick="openTab(event, 'Chart')">Commits Chart</button>
+      <button class="tablinks" onclick="openTab(event, 'Radar')">Language Relationship Diagram</button>
+      <button class="tablinks" onclick="openTab(event, 'Graph')">Repository-Users Relationship Graph</button>
+    </div>
+
+    <!-- Tab content -->
+    <div id="Chart" class="tabcontent active" style="display:block">
+      <h3 style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Commits Aggregation Chart</h3>
+      <p style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Shows the summated commits of the given user and repository subset<br> specifed by the language, repository and username filters.</p>
+      <div id="chart"></div>
+    </div>
+
+    <div id="Radar" class="tabcontent" style="display:none">
+      <h3 style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Language Radar</h3>
+      <p style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Calculates for a given language out of the language filter<br> what are the popular languages within it's repository set.</p>
+      <div id="pi"></div>
+    </div>
+
+    <div id="Graph" class="tabcontent" style="display:none">
+      <h3 style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Repository-User interaction graph</h3>
+      <p style = "font-family:georgia,garamond,serif;font-size:16px;font-style:italic;">Shows the links between various repos and users, for the given subset of the complete data<br> green and orange nodes are users and repos respectivly. <br> The nodes are labeled with the corresponding repository or user name, if you hover over them.</p>
+      <div id="graph"></div>
+    </div>
+
+    <script type="text/javascript">
+
+    function openTab(evt, name) {
+      // Declare all variables
+      var i, tabcontent, tablinks;
+
+      // Get all elements with class="tabcontent" and hide them
+      tabcontent = document.getElementsByClassName("tabcontent");
+      for (i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = "none";
+      }
+
+      // Get all elements with class="tablinks" and remove the class "active"
+      tablinks = document.getElementsByClassName("tablinks");
+      for (i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+      }
+
+      // Show the current tab, and add an "active" class to the button that opened the tab
+      document.getElementById(name).style.display = "block";
+      evt.currentTarget.className += " active";
+    }
+
+      var yourVlSpec = {
+
+
+    "$schema": "https://vega.github.io/schema/vega/v3.json",
+    "width": 1800,
+    "height": 700,
+    "padding": 0,
+    "autosize": "pad",
+
+
+    "signals": [
+      {"name": "cx", "update": "width / 2"},
+      {"name": "cy", "update": "height / 2"},
+      {
+        "name": "nodeRadius",
+        "value": 8,
+        "bind": {"input": "range", "min": 1, "max": 50, "step": 1}
+      },
+      {
+        "name": "nodeCharge",
+        "value": -30,
+        "bind": {"input": "range", "min": -100, "max": 10, "step": 1}
+      },
+      {
+        "name": "linkDistance",
+        "value": 30,
+        "bind": {"input": "range", "min": 5, "max": 100, "step": 1}
+      },
+      {"name": "static", "value": true, "bind": {"input": "checkbox"}},
+      {
+        "description": "State variable for active node fix status.",
+        "name": "fix",
+        "value": 0,
+        "on": [
+          {
+            "events": "symbol:mouseout[!event.buttons], window:mouseup",
+            "update": "0"
+          },
+          {"events": "symbol:mouseover", "update": "fix || 1"},
+          {
+            "events": "[symbol:mousedown, window:mouseup] > window:mousemove!",
+            "update": "2",
+            "force": true
+          }
+        ]
+      },
+      {
+        "description": "Graph node most recently interacted with.",
+        "name": "node",
+        "value": null,
+        "on": [
+          {"events": "symbol:mouseover", "update": "fix === 1 ? item() : node"}
+        ]
+      },
+      {
+        "description": "Flag to restart Force simulation upon data changes.",
+        "name": "restart",
+        "value": false,
+        "on": [{"events": {"signal": "fix"}, "update": "fix > 1"}]
+      }
+    ],
+    "data": [
+      {
+        "name": "node-data",
+        "url": "graph",
+        "format": {"type": "json", "property": "nodes"}
+      },
+      {
+        "name": "link-data",
+        "url": "graph",
+        "format": {"type": "json", "property": "links"}
+      }
+    ],
+    "scales": [
+      {"name": "color", "type": "ordinal", "range": {"scheme": "dark2"}}
+    ],
+    "marks": [
+      {
+        "name": "nodes",
+        "type": "symbol",
+        "zindex": 1,
+        "from": {"data": "node-data"},
+        "on": [
+          {
+            "trigger": "fix",
+            "modify": "node",
+            "values": "fix === 1 ? {fx:node.x, fy:node.y} : {fx:x(), fy:y()}"
+          },
+          {"trigger": "!fix", "modify": "node", "values": "{fx: null, fy: null}"}
+        ],
+        "encode": {
+          "enter": {
+            "fill": {"scale": "color", "field": "group"},
+            "stroke": {"value": "white"},
+            "tooltip": {"signal": "datum.id"}
+          },
+          "update": {
+            "size": {"signal": "2 * nodeRadius * nodeRadius"},
+            "cursor": {"value": "pointer"}
+          }
+        },
+        "transform": [
+          {
+            "type": "force",
+            "iterations": 300,
+            "restart": {"signal": "restart"},
+            "static": {"signal": "static"},
+            "forces": [
+              {"force": "center", "x": {"signal": "cx"}, "y": {"signal": "cy"}},
+              {"force": "collide", "radius": {"signal": "nodeRadius"}},
+              {"force": "nbody", "strength": {"signal": "nodeCharge"}},
+              {
+                "force": "link",
+                "links": "link-data",
+                "distance": {"signal": "linkDistance"}
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "path",
+        "from": {"data": "link-data"},
+        "interactive": false,
+        "encode": {
+          "update": {"stroke": {"value": "#ccc"}, "strokeWidth": {"value": 0.5}}
+        },
+        "transform": [
+          {
+            "type": "linkpath",
+            "shape": "line",
+            "sourceX": "datum.source.x",
+            "sourceY": "datum.source.y",
+            "targetX": "datum.target.x",
+            "targetY": "datum.target.y"
+          }
+        ]
+      }
+    ],
+
+    "config": {}
+
+  };
+
+  var yourVlSpec3 = {
+    "$schema": "https://vega.github.io/schema/vega/v5.json",
+    "width": 500,
+    "height": 500,
+    "padding": 75,
+
+
+
+
+  "autosize": "none",
+
+
+
+
+  "signals": [
+    {"name": "radius", "update": "width / 2"}
+  ],
+
+  "data": [
+    {
+      "name": "table",
+      "url":"radar"
+    },
+    {
+      "name": "keys",
+      "source": "table",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": ["key"]
+        }
+      ]
+    }
+  ],
+
+  "scales": [
+    {
+      "name": "angular",
+      "type": "point",
+      "range": {"signal": "[-PI, PI]"},
+      "padding": 0.5,
+      "domain": {"data": "table", "field": "key"}
+    },
+    {
+      "name": "radial",
+      "type": "linear",
+      "range": {"signal": "[0, radius]"},
+      "zero": true,
+      "nice": false,
+      "domain": {"data": "table", "field": "value"},
+      "domainMin": 0
+    },
+    {
+      "name": "color",
+      "type": "ordinal",
+      "domain": {"data": "table", "field": "category"},
+      "range": {"scheme": "category10"}
+    }
+  ],
+
+  "encode": {
+    "enter": {
+      "x": {"signal": "radius"},
+      "y": {"signal": "radius"}
+    }
+  },
+
+  "marks": [
+    {
+      "type": "group",
+      "name": "categories",
+      "zindex": 1,
+      "from": {
+        "facet": {"data": "table", "name": "facet", "groupby": ["category"]}
+      },
+      "marks": [
+        {
+          "type": "line",
+          "name": "category-line",
+          "from": {"data": "facet"},
+          "encode": {
+            "enter": {
+              "interpolate": {"value": "linear-closed"},
+              "x": {"signal": "scale('radial', datum.value) * cos(scale('angular', datum.key))"},
+              "y": {"signal": "scale('radial', datum.value) * sin(scale('angular', datum.key))"},
+              "stroke": {"scale": "color", "field": "category"},
+              "strokeWidth": {"value": 1},
+              "fill": {"scale": "color", "field": "category"},
+              "fillOpacity": {"value": 0.1}
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "value-text",
+          "from": {"data": "category-line"},
+          "encode": {
+            "enter": {
+              "x": {"signal": "datum.x"},
+              "y": {"signal": "datum.y"},
+              "text": {"signal": "datum.datum.value"},
+              "align": {"value": "center"},
+              "baseline": {"value": "middle"},
+              "fill": {"value": "black"}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "rule",
+      "name": "radial-grid",
+      "from": {"data": "keys"},
+      "zindex": 0,
+      "encode": {
+        "enter": {
+          "x": {"value": 0},
+          "y": {"value": 0},
+          "x2": {"signal": "radius * cos(scale('angular', datum.key))"},
+          "y2": {"signal": "radius * sin(scale('angular', datum.key))"},
+          "stroke": {"value": "lightgray"},
+          "strokeWidth": {"value": 1}
+        }
+      }
+    },
+    {
+      "type": "text",
+      "name": "key-label",
+      "from": {"data": "keys"},
+      "zindex": 1,
+      "encode": {
+        "enter": {
+          "x": {"signal": "(radius + 5) * cos(scale('angular', datum.key))"},
+          "y": {"signal": "(radius + 5) * sin(scale('angular', datum.key))"},
+          "text": {"field": "key"},
+          "align": [
+            {
+              "test": "abs(scale('angular', datum.key)) > PI / 2",
+              "value": "right"
+            },
+            {
+              "value": "left"
+            }
+          ],
+          "baseline": [
+            {
+              "test": "scale('angular', datum.key) > 0", "value": "top"
+            },
+            {
+              "test": "scale('angular', datum.key) == 0", "value": "middle"
+            },
+            {
+              "value": "bottom"
+            }
+          ],
+          "fill": {"value": "black"},
+          "fontWeight": {"value": "bold"}
+        }
+      }
+    },
+    {
+      "type": "line",
+      "name": "outer-line",
+      "from": {"data": "radial-grid"},
+      "encode": {
+        "enter": {
+          "interpolate": {"value": "linear-closed"},
+          "x": {"field": "x2"},
+          "y": {"field": "y2"},
+          "stroke": {"value": "lightgray"},
+          "strokeWidth": {"value": 1}
+        }
+      }
+    }
+  ]
+
+};
+
+
+
+
+  var yourVlSpec2 = {
+
+
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "width": 1500,
+    "height": 550,
+"padding": 0,
+    "autosize":"pad",
+    "data": {"url": "chart"},
+    "mark": "bar",
+
+    "encoding": {
+      "x": {
+        "timeUnit": "yearmonth",
+        "field": "dat",
+        "type": "ordinal",
+        "axis": {"title": "Timescale"}
+      },
+      "y": {
+        "aggregate": "count",
+        "type": "quantitative",
+        "label" : "Combined Commits"
+      },
+      "color": {
+        "field": "login",
+        "type": "nominal",
+        "scale": {
+          //"domain": ["sun", "fog", "drizzle", "rain", "snow"],
+        //  "range": ["#e7ba52", "#c7c7c7", "#aec7e8", "#1f77b4", "#9467bd"]
+        },
+        "legend": {
+          "title": "Users and Repos",
+          "columns": 1
+        }
+      }
+    }
+
+
+};
+
+
+
+
+
+
+
+       vegaEmbed('#chart', yourVlSpec2);
+       vegaEmbed('#pi', yourVlSpec3);
+       vegaEmbed('#graph', yourVlSpec);
+
+
+
+
+        function getLangSelection() {
+            lang = document.getElementById("lang").value;
+            document.getElementById("lang_value").value = lang;
+            loadRepos(lang);
+        }
+        function loadRepos(lang) {
+        var myarray = new Array();
+        $.getJSON("repolang?lang="+lang, function(jsonData){
+          document.form.repo.options.length = 0;
+          document.form.repo.options[0] = new Option("All repos    ","All",true, false);
+         $.each(jsonData, function(i,j)
+        { document.form.repo.options[i+1] = new Option(j.repo_name); });});
+        }
+
+
+
+        function getRepoSelection() {
+            repo = document.getElementById("repo").value;
+            document.getElementById("repo_value").value = repo;
+            loadUsers(repo);
+        }
+        function loadUsers(repo) {
+        var myarray = new Array();
+        $.getJSON("repouser?repo="+repo, function(jsonData){
+          document.form.user.options.length = 0;
+          document.form.user.options[0] = new Option("All users    ","All",true, false);
+         $.each(jsonData, function(i,j)
+        { document.form.user.options[i+1] = new Option(j.login); });});
+        }
+
+        function getUserSelection() {
+            user = document.getElementById("user").value;
+            document.getElementById("user_value").value = user;
+        }
+
+
+
+
+    </script>
+  </body>
+
+  <style>
+
+
+  </style>
+
+
+</html>
